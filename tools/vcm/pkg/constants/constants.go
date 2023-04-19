@@ -1,0 +1,32 @@
+// Copyright (c) 2023, Oracle and/or its affiliates.
+// Licensed under the Universal Permissive License v 1.0 as shown at https://oss.oracle.com/licenses/upl.
+
+package constants
+
+const FlagChartName = "chart"
+const FlagChartShorthand = "c"
+const FlagChartUsage = "Name of the chart."
+const FlagChartExampleKeycloak = "keycloakx"
+
+const FlagVersionName = "version"
+const FlagVersionShorthand = "v"
+const FlagVersionUsage = "Upstream version of the chart."
+const FlagVersionExample210 = "2.1.0"
+
+const FlagTargetVersionName = "targetVersion"
+const FlagTargetVersionShorthand = "t"
+const FlagTargetVersionUsage = "Target downstream version of the chart."
+const FlagTargetVersionExample002 = "0.0.2"
+
+const FlagUpstreamProvenanceName = "upstreamProvenance"
+const FlagUpstreamProvenanceShorthand = "u"
+const FlagUpstreamProvenanceUsage = "Preserve upstream version."
+const FlagUpstreamProvenanceDefault = true
+
+const FlagPatchVersionName = "patchVersion"
+const FlagPatchVersionShorthand = "p"
+const FlagPatchVersionUsage = "Version to apply patch from."
+const FlagPatchVersionExample001 = "0.0.1"
+
+const FlagExampleFormat = "--%s|-%s %v "
+const CommandWithFlagExampleFormat = `%s ` + FlagExampleFormat
