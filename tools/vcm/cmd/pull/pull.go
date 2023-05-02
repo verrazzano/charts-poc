@@ -5,19 +5,16 @@ package pull
 
 import (
 	"fmt"
-	"reflect"
+	"os"
 	"strings"
 
-	"github.com/verrazzano/verrazzano/platform-operator/apis/verrazzano/v1beta1"
-	"github.com/verrazzano/verrazzano/platform-operator/controllers/verrazzano/component/registry"
-
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
+	vcmhelpers "github.com/verrazzano/charts-poc/tools/vcm/cmd/helpers"
 	"github.com/verrazzano/charts-poc/tools/vcm/pkg/constants"
-	vzapi "github.com/verrazzano/verrazzano/platform-operator/apis/verrazzano/v1alpha1"
+	"github.com/verrazzano/charts-poc/tools/vcm/pkg/fs"
+	"github.com/verrazzano/charts-poc/tools/vcm/pkg/helm"
 	cmdhelpers "github.com/verrazzano/verrazzano/tools/vz/cmd/helpers"
 	"github.com/verrazzano/verrazzano/tools/vz/pkg/helpers"
-	"github.com/verrazzano/verrazzano/tools/vz/pkg/templates"
 )
 
 const (
@@ -26,54 +23,28 @@ const (
 	helpLong    = `The command 'pull' pulls an upstream chart`
 )
 
-// The component output is disabled pending the resolution some issues with
-// the content of the Verrazzano status block
-var componentOutputEnabled = false
-
-type TemplateInput struct {
-	Endpoints         map[string]string
-	Components        map[string]string
-	ComponentsEnabled bool
-
-	Name                string
-	Namespace           string
-	Version             string
-	State               string
-	Profile             string
-	AvailableComponents string
-}
-
-// statusOutputTemplate - template for output of status command
-const statusOutputTemplate = `
-Verrazzano Status
-  Name: {{.Name}}
-  Namespace: {{.Namespace}}
-  Profile: {{.Profile}}
-  Version: {{.Version}}
-  State: {{.State}}
-{{- if .AvailableComponents }}
-  Available Components: {{.AvailableComponents}}
-{{- end }}
-{{- if .Endpoints }}
-  Access Endpoints:
-{{- range $key, $value := .Endpoints }}
-    {{ $key }}: {{ $value }}
-{{- end }}
-{{- end }}
-{{- if .ComponentsEnabled }}
-  Components:
-{{- range $key, $value := .Components }}
-    {{ $key }}: {{ $value }}
-{{- end }}
-{{- end }}
-`
-
 func buildExample() string {
-	examples := []string{fmt.Sprintf(constants.CommandWithFlagExampleFormat+` `+constants.FlagExampleFormat, CommandName,
-		constants.FlagChartName, constants.FlagChartShorthand, constants.FlagChartExampleKeycloak, constants.FlagVersionName, constants.FlagPatchVersionShorthand, constants.FlagVersionExample210)}
-	examples = append(examples, fmt.Sprintf(constants.CommandWithFlagExampleFormat, examples[len(examples)-1], constants.FlagTargetVersionName, constants.FlagChartShorthand, constants.FlagTargetVersionExample002))
-	examples = append(examples, fmt.Sprintf(constants.CommandWithFlagExampleFormat, examples[len(examples)-1], constants.FlagUpstreamProvenanceName, constants.FlagUpstreamProvenanceShorthand, constants.FlagUpstreamProvenanceDefault))
-	examples = append(examples, fmt.Sprintf(constants.CommandWithFlagExampleFormat, examples[len(examples)-1], constants.FlagPatchVersionName, constants.FlagPatchVersionShorthand, constants.FlagPatchVersionExample001))
+	examples := []string{fmt.Sprintf(constants.CommandWithFlagExampleFormat+" "+
+		constants.FlagExampleFormat+" "+
+		constants.FlagExampleFormat+" "+
+		constants.FlagExampleFormat,
+		CommandName, constants.FlagChartName, constants.FlagChartShorthand, constants.FlagChartExampleKeycloak,
+		constants.FlagVersionName, constants.FlagPatchVersionShorthand, constants.FlagVersionExample210,
+		constants.FlagRepoName, constants.FlagRepoShorthand, constants.FlagRepoExampleCodecentric,
+		constants.FlagDirName, constants.FlagDirShorthand, constants.FlagDirExampleLocal)}
+
+	examples = append(examples, fmt.Sprintf(constants.CommandWithFlagExampleFormat, examples[len(examples)-1],
+		constants.FlagTargetVersionName, constants.FlagChartShorthand, constants.FlagTargetVersionExample002))
+
+	examples = append(examples, fmt.Sprintf(constants.CommandWithFlagExampleFormat, examples[len(examples)-1],
+		constants.FlagUpstreamProvenanceName, constants.FlagUpstreamProvenanceShorthand, constants.FlagUpstreamProvenanceDefault))
+
+	examples = append(examples, fmt.Sprintf(constants.CommandWithFlagExampleFormat, examples[len(examples)-1],
+		constants.FlagPatchName, constants.FlagPatchShorthand, constants.FlagPatchDefault))
+
+	examples = append(examples, fmt.Sprintf(constants.CommandWithFlagExampleFormat, examples[len(examples)-1],
+		constants.FlagPatchVersionName, constants.FlagPatchVersionShorthand, constants.FlagPatchVersionExample001))
+
 	return fmt.Sprintln(examples)
 }
 
@@ -83,100 +54,179 @@ func NewCmdPull(vzHelper helpers.VZHelper) *cobra.Command {
 		return runCmdPull(cmd, vzHelper)
 	}
 	cmd.Example = buildExample()
-
-	cmd.PersistentFlags().AddFlag(&pflag.Flag{
-		Name:      constants.FlagChartName,
-		Shorthand: constants.FlagChartShorthand,
-		Usage:     constants.FlagChartUsage,
-	})
-
-	cmd.PersistentFlags().AddFlag(&pflag.Flag{
-		Name:      constants.FlagVersionName,
-		Shorthand: constants.FlagVersionShorthand,
-		Usage:     constants.FlagVersionExample210,
-	})
+	cmd.PersistentFlags().StringP(constants.FlagChartName, constants.FlagChartShorthand, "", constants.FlagChartUsage)
+	cmd.PersistentFlags().StringP(constants.FlagVersionName, constants.FlagVersionShorthand, "", constants.FlagVersionExample210)
+	cmd.PersistentFlags().StringP(constants.FlagRepoName, constants.FlagRepoShorthand, "", constants.FlagRepoUsage)
+	cmd.PersistentFlags().StringP(constants.FlagDirName, constants.FlagDirShorthand, "", constants.FlagDirUsage)
+	cmd.PersistentFlags().StringP(constants.FlagTargetVersionName, constants.FlagTargetVersionShorthand, "", constants.FlagTargetVersionExample002)
+	cmd.PersistentFlags().BoolP(constants.FlagUpstreamProvenanceName, constants.FlagUpstreamProvenanceShorthand, true, constants.FlagUpstreamProvenanceUsage)
+	cmd.PersistentFlags().BoolP(constants.FlagPatchName, constants.FlagPatchShorthand, true, constants.FlagPatchUsage)
+	cmd.PersistentFlags().StringP(constants.FlagPatchVersionName, constants.FlagPatchVersionShorthand, "", constants.FlagPatchVersionUsage)
 
 	return cmd
 }
 
 // runCmdStatus - run the "vz status" command
 func runCmdPull(cmd *cobra.Command, vzHelper helpers.VZHelper) error {
-	client, err := vzHelper.GetClient(cmd)
+	chart, err := vcmhelpers.GetMandatoryStringFlagValueOrError(cmd, constants.FlagChartName, constants.FlagChartShorthand)
 	if err != nil {
 		return err
 	}
 
-	// Get the VZ resource
-	vz, err := helpers.FindVerrazzanoResource(client)
+	version, err := vcmhelpers.GetMandatoryStringFlagValueOrError(cmd, constants.FlagVersionName, constants.FlagVersionShorthand)
 	if err != nil {
 		return err
 	}
-	templateValues := TemplateInput{
-		Endpoints:           getEndpoints(vz.Status.VerrazzanoInstance),
-		Components:          getComponents(vz.Status.Components),
-		Name:                vz.Name,
-		Namespace:           vz.Namespace,
-		Version:             vz.Status.Version,
-		State:               string(vz.Status.State),
-		AvailableComponents: getAvailableComponents(vz.Status.Available),
-		Profile:             getProfile(vz.Spec.Profile),
-	}
-	result, err := templates.ApplyTemplate(statusOutputTemplate, templateValues)
+
+	repo, err := vcmhelpers.GetMandatoryStringFlagValueOrError(cmd, constants.FlagRepoName, constants.FlagRepoShorthand)
 	if err != nil {
-		return fmt.Errorf("Failed to generate %s command output: %s", CommandName, err.Error())
+		return err
 	}
-	fmt.Fprintf(vzHelper.GetOutputStream(), result)
 
-	return nil
-}
-
-func getAvailableComponents(available *string) string {
-	if available == nil {
-		return ""
+	chartsDir, err := vcmhelpers.GetMandatoryStringFlagValueOrError(cmd, constants.FlagDirName, constants.FlagDirShorthand)
+	if err != nil {
+		return err
 	}
-	return *available
-}
 
-func getProfile(profile v1beta1.ProfileType) string {
-	if profile == "" {
-		return string(vzapi.Prod)
+	targetVersion, err := cmd.PersistentFlags().GetString(constants.FlagTargetVersionName)
+	if err != nil {
+		return err
 	}
-	return string(profile)
-}
 
-func getEndpoints(instance *v1beta1.InstanceInfo) map[string]string {
-	values := map[string]string{}
-	if instance == nil {
-		return values
+	if targetVersion == "" {
+		targetVersion = version
 	}
-	instanceValue := reflect.Indirect(reflect.ValueOf(instance))
-	instanceType := reflect.TypeOf(instance).Elem()
-	for i := 0; i < instanceType.NumField(); i++ {
-		fieldValue := instanceValue.Field(i)
-		v, ok := fieldValue.Interface().(*string)
-		if ok && v != nil {
-			k := getJSONTagNameForField(instanceType.Field(i))
-			values[k] = *v
+
+	if len(strings.TrimSpace(targetVersion)) == 0 {
+		return fmt.Errorf("%s can not be empty", constants.FlagTargetVersionName)
+	}
+
+	saveUpstream, err := cmd.PersistentFlags().GetBool(constants.FlagUpstreamProvenanceName)
+	if err != nil {
+		return err
+	}
+
+	patchDiffs, err := cmd.PersistentFlags().GetBool(constants.FlagPatchName)
+	if err != nil {
+		return err
+	}
+
+	var patchVersion string
+	if patchDiffs {
+		patchVersion, err = cmd.PersistentFlags().GetString(constants.FlagPatchVersionName)
+		if err != nil {
+			return err
 		}
 	}
-	return values
-}
 
-func getJSONTagNameForField(field reflect.StructField) string {
-	return strings.Split(field.Tag.Get("json"), ",")[0]
-}
+	helmConfig, err := helm.NewHelmConfig(vzHelper)
+	if err != nil {
+		return fmt.Errorf("unable to init helm config, error %v", err)
+	}
 
-// addComponents - add the component status information
-func getComponents(components v1beta1.ComponentStatusMap) map[string]string {
-	values := map[string]string{}
-	if componentOutputEnabled {
-		for _, component := range components {
-			ok, c := registry.FindComponent(component.Name)
-			if !ok {
-				continue
+	fmt.Fprintf(vzHelper.GetOutputStream(), "\nAdding/Updtaing %s chart repo with url %s\n", chart, repo)
+	repoName, err := helmConfig.AddAndUpdateChartRepo(chart, repo)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(vzHelper.GetOutputStream(), "Pulling %s chart version %s to target version %s..\n", chart, version, targetVersion)
+	err = helmConfig.DownloadChart(chart, repoName, version, targetVersion, chartsDir)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(vzHelper.GetOutputStream(), "Rearrange chart directory\n")
+	err = fs.RearrangeChartDirectory(chart, chartsDir, targetVersion)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(vzHelper.GetOutputStream(), "\nPulled chart %s version %s to target version %s from %s to %s/%s/%s", chart, version, targetVersion, repo, chartsDir, chart, targetVersion)
+	if saveUpstream {
+		fmt.Fprintf(vzHelper.GetOutputStream(), "Save upstream chart\n")
+		err = fs.SaveUpstreamChart(chart, version, targetVersion, chartsDir)
+		if err != nil {
+			return err
+		}
+
+		fmt.Fprintf(vzHelper.GetOutputStream(), "Save chart provenance file\n")
+		chartProvenance, err := helmConfig.GetChartProvenance(chart, repo, version)
+		if err != nil {
+			return err
+		}
+
+		err = fs.SaveChartProvenance(chartProvenance, chart, targetVersion, chartsDir)
+		if err != nil {
+			return err
+		}
+
+		fmt.Fprintf(vzHelper.GetOutputStream(), "\nUpstream chart saved to %s/../provenance/%s/upstreams/%s", chartsDir, chart, version)
+		fmt.Fprintf(vzHelper.GetOutputStream(), "\nUpstream provenance manifest created in %s/../provenance/%s/%s.yaml", chartsDir, chart, targetVersion)
+
+	}
+
+	if patchDiffs {
+		if patchVersion == "" {
+			patchVersion, err = fs.FindChartVersionToPatch(chartsDir, chart, targetVersion)
+			if err != nil {
+				return fmt.Errorf("unable to find version to patch, error %v", err)
 			}
-			values[c.GetJSONName()] = string(component.State)
+		}
+
+		if patchVersion != "" {
+			patchFile, err := fs.GeneratePatchFile(chart, patchVersion, chartsDir)
+			if err != nil {
+				return fmt.Errorf("unable to generate patch file, error %v", err)
+			}
+
+			fileStat, err := os.Stat(patchFile)
+			if err != nil {
+				return fmt.Errorf("unable to read patch file at %s, error %v", patchFile, err)
+			}
+
+			if fileStat.Size() == 0 {
+				fmt.Fprintf(vzHelper.GetOutputStream(), "Nothing to patch from previous version\n")
+			}
+
+			outFile, rejectsFile, err := fs.ApplyPatchFile(chart, targetVersion, chartsDir, patchFile)
+			if err != nil {
+				return fmt.Errorf("unable to apply patch file %s, error %v", patchFile, err)
+			}
+
+			fileStat, err = os.Stat(outFile)
+			if err != nil {
+				return fmt.Errorf("unable to read patching output file at %s, error %v", outFile, err)
+			}
+
+			if fileStat.Size() != 0 {
+				output, err := os.ReadFile(outFile)
+				if err != nil {
+					return fmt.Errorf("unable to read patching output file at %s, error %v", outFile, err)
+				}
+
+				fmt.Fprintf(vzHelper.GetOutputStream(), "Patching output:\n%s", string(output))
+			}
+
+			fileStat, err = os.Stat(rejectsFile)
+			if err != nil {
+				if os.IsNotExist(err) {
+					fmt.Fprintf(vzHelper.GetOutputStream(), "No rejects from patching\n")
+				} else {
+					return fmt.Errorf("unable to read rejects file at %s, error %v", rejectsFile, err)
+				}
+			} else {
+				if fileStat.Size() != 0 {
+					rejects, err := os.ReadFile(rejectsFile)
+					if err != nil {
+						return fmt.Errorf("unable to read rejects file at %s, error %v", rejectsFile, err)
+					}
+
+					fmt.Fprintf(vzHelper.GetOutputStream(), "Patching results for rejects:\n%s", string(rejects))
+				}
+			}
+			fmt.Fprintf(vzHelper.GetOutputStream(), "\nAny diffs from version %s has been applied\n", patchVersion)
 		}
 	}
-	return values
+	return nil
 }
