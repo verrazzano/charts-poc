@@ -22,9 +22,9 @@ type HelmConfig struct {
 }
 
 type ChartProvenance struct {
-	UpstreamVersion        string                 `json:"upstreamVersion"`
-	UpstreamChartLocalPath string                 `json:"upstreamChartLocalPath"`
-	UpstreamIndexEntry     *helmrepo.ChartVersion `json:"upstreamIndexEntry"`
+	UpstreamVersion        string
+	UpstreamChartLocalPath string
+	UpstreamIndexEntry     *helmrepo.ChartVersion
 }
 
 func NewHelmConfig(vzHelper helpers.VZHelper) (*HelmConfig, error) {

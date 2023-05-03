@@ -65,8 +65,8 @@ func GeneratePatchFile(chart string, version string, chartsDir string) (string, 
 		return "", fmt.Errorf("unable to read provenance file %s, error %v", provenanceFile, err)
 	}
 
-	var chartProvenance *helm.ChartProvenance
-	err = yaml.Unmarshal(in, chartProvenance)
+	chartProvenance := helm.ChartProvenance{}
+	err = yaml.Unmarshal(in, &chartProvenance)
 	if err != nil {
 		return "", fmt.Errorf("unable to parse provenance file %s, error %v", provenanceFile, err)
 	}
@@ -81,14 +81,35 @@ func GeneratePatchFile(chart string, version string, chartsDir string) (string, 
 		return "", fmt.Errorf("upstream chart directory %s not found, error %v", upstreamChartDir, err)
 	}
 
-	patchFile := fmt.Sprintf("/tmp/vz_charts_patch_%s_%s", chart, version)
-	cmd := exec.Command("diff", "-Naurw", upstreamChartDir, chartDir, ">", patchFile)
-	err = cmd.Run()
+	patchFile, err := os.Create(fmt.Sprintf("%s/../vz_charts_patch_%s_%s.patch", chartsDir, chart, version))
 	if err != nil {
-		return "", fmt.Errorf("error running command %s, error %v", cmd.String(), err)
+		return "", fmt.Errorf("unable to create empty patch file")
 	}
 
-	return patchFile, nil
+	cmd := exec.Command("diff", "-Naurw", upstreamChartDir, chartDir)
+	cmd.Stdout = patchFile
+	err = cmd.Run()
+	if err != nil {
+		fmt.Println(fmt.Sprint(err))
+		//return "", fmt.Errorf("error running command %s, error %v", cmd.String(), err)
+	}
+
+	patchFileStats, err := os.Stat(patchFile.Name())
+	if err != nil {
+		return "", fmt.Errorf("unable to stat patch file at %v, error %v", patchFile.Name(), err)
+	}
+
+	fmt.Println(patchFileStats.Size())
+	if patchFileStats.Size() == 0 {
+		err := os.Remove(patchFile.Name())
+		if err != nil {
+			return "", fmt.Errorf("unable to remove empty patch file at %v, error %v", patchFile.Name(), err)
+		}
+
+		return "", nil
+	}
+
+	return patchFile.Name(), nil
 }
 
 func FindChartVersionToPatch(chartsDir string, chart string, version string) (string, error) {
@@ -106,7 +127,7 @@ func FindChartVersionToPatch(chartsDir string, chart string, version string) (st
 	var versions []*semver.SemVersion
 	for _, entry := range entries {
 		if entry.IsDir() {
-			chartVersion, err := semver.NewSemVersion(version)
+			chartVersion, err := semver.NewSemVersion(entry.Name())
 			if err != nil {
 				return "", fmt.Errorf("invalid chart version %s, error %v", chartVersion.ToString(), err)
 			}
@@ -140,13 +161,51 @@ func ApplyPatchFile(chart string, version string, chartsDir string, patchFile st
 		return "", "", fmt.Errorf("patch file %s not found, error %v", patchFile, err)
 	}
 
-	rejectsFile := fmt.Sprintf("/tmp/vz_charts_patch_%s_%s_rejects", chart, version)
-	outFile := fmt.Sprintf("/tmp/vz_charts_patch_%s_%s_out", chart, version)
-	cmd := exec.Command("patch", "--no-backup-if-mismatch", "-r", rejectsFile, "--directory", chartDir, ">", outFile)
-	err := cmd.Run()
+	rejectsFile, err := os.Create(fmt.Sprintf("%s/../vz_charts_patch_%s_%s_rejects.rejects", chartsDir, chart, version))
+	if err != nil {
+		return "", "", fmt.Errorf("unable to create empty rejects file")
+	}
+
+	outFile, err := os.Create(fmt.Sprintf("%s/../vz_charts_patch_%s_%s_out.out", chartsDir, chart, version))
+	if err != nil {
+		return "", "", fmt.Errorf("unable to create empty output file for patching")
+	}
+
+	cmd := exec.Command("patch", "--no-backup-if-mismatch", "-r", rejectsFile.Name(), "--directory", chartDir, "<"+patchFile)
+	cmd.Stdout = outFile
+	err = cmd.Run()
 	if err != nil {
 		return "", "", fmt.Errorf("error running command %s, error %v", cmd.String(), err)
 	}
 
-	return outFile, rejectsFile, nil
+	var rejectsFilePath, outFilePath string
+	rejectsFileStats, err := os.Stat(rejectsFile.Name())
+	if err != nil {
+		return "", "", fmt.Errorf("unable to stat reject file at %v, error %v", rejectsFile.Name(), err)
+	}
+
+	if rejectsFileStats.Size() == 0 {
+		err := os.Remove(rejectsFile.Name())
+		if err != nil {
+			return "", "", fmt.Errorf("unable to remove empty rejects file at %v, error %v", rejectsFile.Name(), err)
+		}
+
+		rejectsFilePath = rejectsFile.Name()
+	}
+
+	outFileStats, err := os.Stat(outFile.Name())
+	if err != nil {
+		return "", "", fmt.Errorf("unable to stat patching output file at %v, error %v", outFile.Name(), err)
+	}
+
+	if outFileStats.Size() == 0 {
+		err := os.Remove(outFile.Name())
+		if err != nil {
+			return "", "", fmt.Errorf("unable to remove empty patching output file at %v, error %v", outFile.Name(), err)
+		}
+
+		outFilePath = outFile.Name()
+	}
+
+	return outFilePath, rejectsFilePath, nil
 }

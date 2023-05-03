@@ -59,8 +59,8 @@ func NewCmdPull(vzHelper helpers.VZHelper) *cobra.Command {
 	cmd.PersistentFlags().StringP(constants.FlagRepoName, constants.FlagRepoShorthand, "", constants.FlagRepoUsage)
 	cmd.PersistentFlags().StringP(constants.FlagDirName, constants.FlagDirShorthand, "", constants.FlagDirUsage)
 	cmd.PersistentFlags().StringP(constants.FlagTargetVersionName, constants.FlagTargetVersionShorthand, "", constants.FlagTargetVersionExample002)
-	cmd.PersistentFlags().BoolP(constants.FlagUpstreamProvenanceName, constants.FlagUpstreamProvenanceShorthand, true, constants.FlagUpstreamProvenanceUsage)
-	cmd.PersistentFlags().BoolP(constants.FlagPatchName, constants.FlagPatchShorthand, true, constants.FlagPatchUsage)
+	cmd.PersistentFlags().BoolP(constants.FlagUpstreamProvenanceName, constants.FlagUpstreamProvenanceShorthand, constants.FlagUpstreamProvenanceDefault, constants.FlagUpstreamProvenanceUsage)
+	cmd.PersistentFlags().BoolP(constants.FlagPatchName, constants.FlagPatchShorthand, constants.FlagPatchDefault, constants.FlagPatchUsage)
 	cmd.PersistentFlags().StringP(constants.FlagPatchVersionName, constants.FlagPatchVersionShorthand, "", constants.FlagPatchVersionUsage)
 
 	return cmd
@@ -161,8 +161,8 @@ func runCmdPull(cmd *cobra.Command, vzHelper helpers.VZHelper) error {
 			return err
 		}
 
-		fmt.Fprintf(vzHelper.GetOutputStream(), "\nUpstream chart saved to %s/../provenance/%s/upstreams/%s", chartsDir, chart, version)
-		fmt.Fprintf(vzHelper.GetOutputStream(), "\nUpstream provenance manifest created in %s/../provenance/%s/%s.yaml", chartsDir, chart, targetVersion)
+		fmt.Fprintf(vzHelper.GetOutputStream(), "Upstream chart saved to %s/../provenance/%s/upstreams/%s\n", chartsDir, chart, version)
+		fmt.Fprintf(vzHelper.GetOutputStream(), "Upstream provenance manifest created in %s/../provenance/%s/%s.yaml\n", chartsDir, chart, targetVersion)
 
 	}
 
@@ -180,13 +180,9 @@ func runCmdPull(cmd *cobra.Command, vzHelper helpers.VZHelper) error {
 				return fmt.Errorf("unable to generate patch file, error %v", err)
 			}
 
-			fileStat, err := os.Stat(patchFile)
-			if err != nil {
-				return fmt.Errorf("unable to read patch file at %s, error %v", patchFile, err)
-			}
-
-			if fileStat.Size() == 0 {
+			if patchFile == "" {
 				fmt.Fprintf(vzHelper.GetOutputStream(), "Nothing to patch from previous version\n")
+				return nil
 			}
 
 			outFile, rejectsFile, err := fs.ApplyPatchFile(chart, targetVersion, chartsDir, patchFile)
@@ -194,38 +190,25 @@ func runCmdPull(cmd *cobra.Command, vzHelper helpers.VZHelper) error {
 				return fmt.Errorf("unable to apply patch file %s, error %v", patchFile, err)
 			}
 
-			fileStat, err = os.Stat(outFile)
-			if err != nil {
-				return fmt.Errorf("unable to read patching output file at %s, error %v", outFile, err)
-			}
-
-			if fileStat.Size() != 0 {
+			if outFile != "" {
 				output, err := os.ReadFile(outFile)
 				if err != nil {
 					return fmt.Errorf("unable to read patching output file at %s, error %v", outFile, err)
 				}
 
-				fmt.Fprintf(vzHelper.GetOutputStream(), "Patching output:\n%s", string(output))
+				fmt.Fprintf(vzHelper.GetOutputStream(), "Patching output:\n%s\n", string(output))
 			}
 
-			fileStat, err = os.Stat(rejectsFile)
-			if err != nil {
-				if os.IsNotExist(err) {
-					fmt.Fprintf(vzHelper.GetOutputStream(), "No rejects from patching\n")
-				} else {
+			if rejectsFile != "" {
+				rejects, err := os.ReadFile(rejectsFile)
+				if err != nil {
 					return fmt.Errorf("unable to read rejects file at %s, error %v", rejectsFile, err)
 				}
-			} else {
-				if fileStat.Size() != 0 {
-					rejects, err := os.ReadFile(rejectsFile)
-					if err != nil {
-						return fmt.Errorf("unable to read rejects file at %s, error %v", rejectsFile, err)
-					}
 
-					fmt.Fprintf(vzHelper.GetOutputStream(), "Patching results for rejects:\n%s", string(rejects))
-				}
+				fmt.Fprintf(vzHelper.GetOutputStream(), "Patching results for rejects:\n%s\n", string(rejects))
+			} else {
+				fmt.Fprintf(vzHelper.GetOutputStream(), "Any diffs from version %s has been applied\n", patchVersion)
 			}
-			fmt.Fprintf(vzHelper.GetOutputStream(), "\nAny diffs from version %s has been applied\n", patchVersion)
 		}
 	}
 	return nil
