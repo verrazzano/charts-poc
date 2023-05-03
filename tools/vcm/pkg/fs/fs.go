@@ -172,6 +172,7 @@ func ApplyPatchFile(chart string, version string, chartsDir string, patchFile st
 	}
 
 	cmd := exec.Command("patch", "--no-backup-if-mismatch", "-r", rejectsFile.Name(), "--directory", chartDir, "<"+patchFile)
+	fmt.Println(cmd.String())
 	cmd.Stdout = outFile
 	err = cmd.Run()
 	if err != nil {
@@ -189,7 +190,7 @@ func ApplyPatchFile(chart string, version string, chartsDir string, patchFile st
 		if err != nil {
 			return "", "", fmt.Errorf("unable to remove empty rejects file at %v, error %v", rejectsFile.Name(), err)
 		}
-
+	} else {
 		rejectsFilePath = rejectsFile.Name()
 	}
 
@@ -203,7 +204,7 @@ func ApplyPatchFile(chart string, version string, chartsDir string, patchFile st
 		if err != nil {
 			return "", "", fmt.Errorf("unable to remove empty patching output file at %v, error %v", outFile.Name(), err)
 		}
-
+	} else {
 		outFilePath = outFile.Name()
 	}
 
