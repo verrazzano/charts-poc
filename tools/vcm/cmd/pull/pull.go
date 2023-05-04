@@ -124,7 +124,7 @@ func runCmdPull(cmd *cobra.Command, vzHelper helpers.VZHelper) error {
 		return fmt.Errorf("unable to init helm config, error %v", err)
 	}
 
-	fmt.Fprintf(vzHelper.GetOutputStream(), "\nAdding/Updtaing %s chart repo with url %s\n", chart, repo)
+	fmt.Fprintf(vzHelper.GetOutputStream(), "Adding/Updtaing %s chart repo with url %s..\n", chart, repo)
 	repoName, err := helmConfig.AddAndUpdateChartRepo(chart, repo)
 	if err != nil {
 		return err
@@ -136,21 +136,22 @@ func runCmdPull(cmd *cobra.Command, vzHelper helpers.VZHelper) error {
 		return err
 	}
 
-	fmt.Fprintf(vzHelper.GetOutputStream(), "Rearrange chart directory\n")
 	err = fs.RearrangeChartDirectory(chart, chartsDir, targetVersion)
 	if err != nil {
 		return err
 	}
 
-	fmt.Fprintf(vzHelper.GetOutputStream(), "\nPulled chart %s version %s to target version %s from %s to %s/%s/%s", chart, version, targetVersion, repo, chartsDir, chart, targetVersion)
+	fmt.Fprintf(vzHelper.GetOutputStream(), "Pulled chart %s version %s to target version %s from %s to %s/%s/%s.\n", chart, version, targetVersion, repo, chartsDir, chart, targetVersion)
 	if saveUpstream {
-		fmt.Fprintf(vzHelper.GetOutputStream(), "Save upstream chart\n")
+
+		fmt.Fprintf(vzHelper.GetOutputStream(), "Saving upstream chart..\n")
 		err = fs.SaveUpstreamChart(chart, version, targetVersion, chartsDir)
 		if err != nil {
 			return err
 		}
 
-		fmt.Fprintf(vzHelper.GetOutputStream(), "Save chart provenance file\n")
+		fmt.Fprintf(vzHelper.GetOutputStream(), "Upstream chart saved to %s/../provenance/%s/upstreams/%s.\n", chartsDir, chart, version)
+		fmt.Fprintf(vzHelper.GetOutputStream(), "Saving chart provenance file..\n")
 		chartProvenance, err := helmConfig.GetChartProvenance(chart, repo, version)
 		if err != nil {
 			return err
@@ -161,9 +162,7 @@ func runCmdPull(cmd *cobra.Command, vzHelper helpers.VZHelper) error {
 			return err
 		}
 
-		fmt.Fprintf(vzHelper.GetOutputStream(), "Upstream chart saved to %s/../provenance/%s/upstreams/%s\n", chartsDir, chart, version)
-		fmt.Fprintf(vzHelper.GetOutputStream(), "Upstream provenance manifest created in %s/../provenance/%s/%s.yaml\n", chartsDir, chart, targetVersion)
-
+		fmt.Fprintf(vzHelper.GetOutputStream(), "Upstream provenance manifest created in %s/../provenance/%s/%s.yaml.\n", chartsDir, chart, targetVersion)
 	}
 
 	if patchDiffs {
@@ -181,7 +180,7 @@ func runCmdPull(cmd *cobra.Command, vzHelper helpers.VZHelper) error {
 			}
 
 			if patchFile == "" {
-				fmt.Fprintf(vzHelper.GetOutputStream(), "Nothing to patch from previous version\n")
+				fmt.Fprintf(vzHelper.GetOutputStream(), "Nothing to patch from previous version.\n")
 				return nil
 			}
 
@@ -190,13 +189,8 @@ func runCmdPull(cmd *cobra.Command, vzHelper helpers.VZHelper) error {
 				return fmt.Errorf("unable to apply patch file %s, error %v", patchFile, err)
 			}
 
-			if outFile != "" {
-				output, err := os.ReadFile(outFile)
-				if err != nil {
-					return fmt.Errorf("unable to read patching output file at %s, error %v", outFile, err)
-				}
-
-				fmt.Fprintf(vzHelper.GetOutputStream(), "Patching output:\n%s\n", string(output))
+			if len(outFile) > 0 {
+				fmt.Fprintf(vzHelper.GetOutputStream(), "Patching output:\n%s.\n", string(outFile))
 			}
 
 			if rejectsFile != "" {
@@ -205,9 +199,9 @@ func runCmdPull(cmd *cobra.Command, vzHelper helpers.VZHelper) error {
 					return fmt.Errorf("unable to read rejects file at %s, error %v", rejectsFile, err)
 				}
 
-				fmt.Fprintf(vzHelper.GetOutputStream(), "Patching results for rejects:\n%s\n", string(rejects))
+				fmt.Fprintf(vzHelper.GetOutputStream(), "Patching results for rejects:\n%s.\n", string(rejects))
 			} else {
-				fmt.Fprintf(vzHelper.GetOutputStream(), "Any diffs from version %s has been applied\n", patchVersion)
+				fmt.Fprintf(vzHelper.GetOutputStream(), "Any diffs from version %s has been applied.\n", patchVersion)
 			}
 		}
 	}

@@ -22,9 +22,9 @@ type HelmConfig struct {
 }
 
 type ChartProvenance struct {
-	UpstreamVersion        string                 `json:"upstreamVersion"`
-	UpstreamChartLocalPath string                 `json:"upstreamChartLocalPath"`
-	UpstreamIndexEntry     *helmrepo.ChartVersion `json:"upstreamIndexEntry"`
+	UpstreamVersion        string                 `yaml:"upstreamVersion"`
+	UpstreamChartLocalPath string                 `yaml:"upstreamChartLocalPath"`
+	UpstreamIndexEntry     *helmrepo.ChartVersion `yaml:"upstreamIndexEntry"`
 }
 
 func NewHelmConfig(vzHelper helpers.VZHelper) (*HelmConfig, error) {
@@ -72,7 +72,7 @@ func (h *HelmConfig) AddAndUpdateChartRepo(chart string, repoUrl string) (string
 			Name: getHelmRepoName(chart),
 			URL:  repoUrl,
 		}
-		fmt.Fprintf(h.vzHelper.GetOutputStream(), "Adding helm repo %s\n", repoEntry.Name)
+		fmt.Fprintf(h.vzHelper.GetOutputStream(), "Adding helm repo %s.\n", repoEntry.Name)
 	} else {
 		fmt.Fprintf(h.vzHelper.GetOutputStream(), "Using helm repo %s\n", repoEntry.Name)
 	}
@@ -115,7 +115,10 @@ func (h *HelmConfig) DownloadChart(chart string, repo string, version string, ta
 	}
 
 	out, err := pull.Run(fmt.Sprintf("%s/%s", repo, chart))
-	fmt.Fprintln(h.vzHelper.GetOutputStream(), out)
+	if out != "" {
+		fmt.Fprintln(h.vzHelper.GetOutputStream(), out)
+	}
+
 	return err
 }
 
