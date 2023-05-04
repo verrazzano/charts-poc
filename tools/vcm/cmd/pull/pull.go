@@ -6,6 +6,7 @@ package pull
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -66,7 +67,7 @@ func NewCmdPull(vzHelper helpers.VZHelper) *cobra.Command {
 	return cmd
 }
 
-// runCmdStatus - run the "vz status" command
+// runCmdPull - run the "vcm pull" command
 func runCmdPull(cmd *cobra.Command, vzHelper helpers.VZHelper) error {
 	chart, err := vcmhelpers.GetMandatoryStringFlagValueOrError(cmd, constants.FlagChartName, constants.FlagChartShorthand)
 	if err != nil {
@@ -150,7 +151,12 @@ func runCmdPull(cmd *cobra.Command, vzHelper helpers.VZHelper) error {
 			return err
 		}
 
-		fmt.Fprintf(vzHelper.GetOutputStream(), "Upstream chart saved to %s/../provenance/%s/upstreams/%s.\n", chartsDir, chart, version)
+		upstreamChartDir, err := filepath.Abs(fmt.Sprintf("%s/../provenance/%s/upstreams/%s", chartsDir, chart, version))
+		if err != nil {
+			return err
+		}
+
+		fmt.Fprintf(vzHelper.GetOutputStream(), "Upstream chart saved to %s.\n", upstreamChartDir)
 		fmt.Fprintf(vzHelper.GetOutputStream(), "Saving chart provenance file..\n")
 		chartProvenance, err := helmConfig.GetChartProvenance(chart, repo, version)
 		if err != nil {
@@ -162,7 +168,12 @@ func runCmdPull(cmd *cobra.Command, vzHelper helpers.VZHelper) error {
 			return err
 		}
 
-		fmt.Fprintf(vzHelper.GetOutputStream(), "Upstream provenance manifest created in %s/../provenance/%s/%s.yaml.\n", chartsDir, chart, targetVersion)
+		provenanceFile, err := filepath.Abs(fmt.Sprintf("%s/../provenance/%s/%s.yaml", chartsDir, chart, targetVersion))
+		if err != nil {
+			return err
+		}
+
+		fmt.Fprintf(vzHelper.GetOutputStream(), "Upstream provenance manifest created in %s.\n", provenanceFile)
 	}
 
 	if patchDiffs {
@@ -184,24 +195,17 @@ func runCmdPull(cmd *cobra.Command, vzHelper helpers.VZHelper) error {
 				return nil
 			}
 
-			outFile, rejectsFile, err := fs.ApplyPatchFile(chart, targetVersion, chartsDir, patchFile)
+			rejectsFileGenerated, err := fs.ApplyPatchFile(vzHelper, chart, targetVersion, chartsDir, patchFile)
 			if err != nil {
 				return fmt.Errorf("unable to apply patch file %s, error %v", patchFile, err)
 			}
 
-			if len(outFile) > 0 {
-				fmt.Fprintf(vzHelper.GetOutputStream(), "Patching output:\n%s.\n", string(outFile))
-			}
-
-			if rejectsFile != "" {
-				rejects, err := os.ReadFile(rejectsFile)
-				if err != nil {
-					return fmt.Errorf("unable to read rejects file at %s, error %v", rejectsFile, err)
-				}
-
-				fmt.Fprintf(vzHelper.GetOutputStream(), "Patching results for rejects:\n%s.\n", string(rejects))
-			} else {
+			if !rejectsFileGenerated {
 				fmt.Fprintf(vzHelper.GetOutputStream(), "Any diffs from version %s has been applied.\n", patchVersion)
+				err = os.Remove(patchFile)
+				if err != nil {
+					return fmt.Errorf("unable to remove patch file at %v, error %v", patchFile, err)
+				}
 			}
 		}
 	}

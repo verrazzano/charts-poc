@@ -43,6 +43,16 @@ const FlagPatchVersionShorthand = "z"
 const FlagPatchVersionUsage = "Version to apply patch from."
 const FlagPatchVersionExample001 = "0.0.1"
 
+const FlagDiffSourceName = "diff-source"
+const FlagDiffSourceShorthand = "s"
+const FlagDiffSourceUsage = "Source directory to diff against."
+const FlagDiffSourceExample = "/root/charts/keycloakx/2.1.0"
+
+const FlagPatchFileName = "patch-file"
+const FlagPatchFileShorthand = "f"
+const FlagPatchFileUsage = "Patch file location."
+const FlagPatchFileExample = "/root/charts/vz_charts_patch_keycloakx_0.0.1.patch"
+
 const FlagExampleFormat = "--%s|-%s %v "
 const CommandWithFlagExampleFormat = `%s ` + FlagExampleFormat
 

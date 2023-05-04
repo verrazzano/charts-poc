@@ -5,30 +5,24 @@ package root
 
 import (
 	"github.com/spf13/cobra"
+	"github.com/verrazzano/charts-poc/tools/vcm/cmd/diff"
+	"github.com/verrazzano/charts-poc/tools/vcm/cmd/patch"
 	"github.com/verrazzano/charts-poc/tools/vcm/cmd/pull"
 	cmdhelpers "github.com/verrazzano/verrazzano/tools/vz/cmd/helpers"
-	"github.com/verrazzano/verrazzano/tools/vz/pkg/constants"
 	"github.com/verrazzano/verrazzano/tools/vz/pkg/helpers"
 )
 
-var kubeconfigFlagValPointer string
-var contextFlagValPointer string
-
 const (
 	CommandName = "vcm"
-	helpShort   = "The vz tool is a command-line utility that allows Verrazzano operators to query and manage a Verrazzano environment"
-	helpLong    = "The vz tool is a command-line utility that allows Verrazzano operators to query and manage a Verrazzano environment"
+	helpShort   = "The vcm tool is a command-line utility that enables developers to pull and customize helm charts."
 )
 
 // NewRootCmd - create the root cobra command
 func NewRootCmd(vzHelper helpers.VZHelper) *cobra.Command {
-	cmd := cmdhelpers.NewCommand(vzHelper, CommandName, helpShort, helpLong)
-
-	// Add global flags
-	cmd.PersistentFlags().StringVar(&kubeconfigFlagValPointer, constants.GlobalFlagKubeConfig, "", constants.GlobalFlagKubeConfigHelp)
-	cmd.PersistentFlags().StringVar(&contextFlagValPointer, constants.GlobalFlagContext, "", constants.GlobalFlagContextHelp)
-
+	cmd := cmdhelpers.NewCommand(vzHelper, CommandName, helpShort, helpShort)
 	// Add commands
 	cmd.AddCommand(pull.NewCmdPull(vzHelper))
+	cmd.AddCommand(diff.NewCmdDiff(vzHelper))
+	cmd.AddCommand(patch.NewCmdPatch(vzHelper))
 	return cmd
 }

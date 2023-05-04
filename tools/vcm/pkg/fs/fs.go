@@ -5,6 +5,7 @@ package fs
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/verrazzano/charts-poc/tools/vcm/pkg/helm"
 	"github.com/verrazzano/verrazzano/pkg/semver"
+	"github.com/verrazzano/verrazzano/tools/vz/pkg/helpers"
 	"gopkg.in/yaml.v3"
 )
 
@@ -73,26 +75,36 @@ func GeneratePatchFile(chart string, version string, chartsDir string) (string, 
 		return "", fmt.Errorf("unable to parse provenance file %s, error %v", provenanceFile, err)
 	}
 
+	return GeneratePatchWithSourceDir(chart, version, chartsDir, fmt.Sprintf("%s/../provenance/%s/%s", chartsDir, chart, chartProvenance.UpstreamChartLocalPath))
+
+}
+
+func GeneratePatchWithSourceDir(chart string, version string, chartsDir string, sourceDir string) (string, error) {
 	chartDir := fmt.Sprintf("%s/%s/%s", chartsDir, chart, version)
 	if _, err := os.Stat(chartDir); err != nil {
 		return "", fmt.Errorf("chart directory %s not found, error %v", chartDir, err)
 	}
 
-	upstreamChartDir, err := filepath.Abs(fmt.Sprintf("%s/../provenance/%s/%s", chartsDir, chart, chartProvenance.UpstreamChartLocalPath))
+	sourceChartDirectory, err := filepath.Abs(sourceDir)
 	if err != nil {
-		return "", fmt.Errorf("unable to find absolute path to upstream chart directory at %s, error %v", upstreamChartDir, err)
+		return "", fmt.Errorf("unable to find absolute path to upstream/source chart directory at %s, error %v", sourceChartDirectory, err)
 	}
 
-	if _, err := os.Stat(upstreamChartDir); err != nil {
-		return "", fmt.Errorf("upstream chart directory %s not found, error %v", upstreamChartDir, err)
+	if _, err := os.Stat(sourceChartDirectory); err != nil {
+		return "", fmt.Errorf("upstream/source chart directory %s not found, error %v", sourceChartDirectory, err)
 	}
 
-	patchFile, err := os.Create(fmt.Sprintf("%s/../vz_charts_patch_%s_%s.patch", chartsDir, chart, version))
+	patchFilePathAbsolute, err := filepath.Abs(fmt.Sprintf("%s/../vz_charts_patch_%s_%s.patch", chartsDir, chart, version))
+	if err != nil {
+		return "", fmt.Errorf("unable to find absolute path for patch file")
+	}
+
+	patchFile, err := os.Create(patchFilePathAbsolute)
 	if err != nil {
 		return "", fmt.Errorf("unable to create empty patch file")
 	}
 
-	cmd := exec.Command("diff", "-Naurw", upstreamChartDir, chartDir)
+	cmd := exec.Command("diff", "-Naurw", sourceChartDirectory, chartDir)
 	cmd.Stdout = patchFile
 	err = cmd.Run()
 	if err != nil {
@@ -159,45 +171,70 @@ func FindChartVersionToPatch(chartsDir string, chart string, version string) (st
 	return highestVersion.ToString(), nil
 }
 
-func ApplyPatchFile(chart string, version string, chartsDir string, patchFile string) ([]byte, string, error) {
+func ApplyPatchFile(vzHelper helpers.VZHelper, chart string, version string, chartsDir string, patchFile string) (bool, error) {
 	chartDir := fmt.Sprintf("%s/%s/%s/", chartsDir, chart, version)
 	if _, err := os.Stat(chartDir); err != nil {
-		return nil, "", fmt.Errorf("chart directory %s not found, error %v", chartDir, err)
+		return false, fmt.Errorf("chart directory %s not found, error %v", chartDir, err)
 	}
 
 	if _, err := os.Stat(patchFile); err != nil {
-		return nil, "", fmt.Errorf("patch file %s not found, error %v", patchFile, err)
+		return false, fmt.Errorf("patch file %s not found, error %v", patchFile, err)
 	}
 
 	rejectsFilePathAbsolute, err := filepath.Abs(fmt.Sprintf("%s/../vz_charts_patch_%s_%s_rejects.rejects", chartsDir, chart, version))
 	if err != nil {
-		return nil, "", fmt.Errorf("unable to find absolute path for rejects file")
+		return false, fmt.Errorf("unable to find absolute path for rejects file")
 	}
 
 	_, err = os.Create(rejectsFilePathAbsolute)
 	if err != nil {
-		return nil, "", fmt.Errorf("unable to create empty rejects file")
+		return false, fmt.Errorf("unable to create empty rejects file")
 	}
 
-	cmd := exec.Command("patch", "--no-backup-if-mismatch", "-p"+fmt.Sprint(strings.Count(chartDir, string(os.PathSeparator))), "-r", rejectsFilePathAbsolute, "--directory", chartDir, "<"+patchFile)
-	out, err := cmd.CombinedOutput()
+	in, err := os.OpenFile(patchFile, io.SeekStart, os.ModePerm)
 	if err != nil {
-		return nil, "", fmt.Errorf("error running command %s, error %v", cmd.String(), err)
+		return false, fmt.Errorf("unable to read patch file")
+	}
+
+	cmd := exec.Command("patch", "--no-backup-if-mismatch", "-p"+fmt.Sprint(strings.Count(chartDir, string(os.PathSeparator))), "-r", rejectsFilePathAbsolute, "--directory", chartDir)
+	cmd.Stdin = in
+	out, cmderr := cmd.CombinedOutput()
+	if cmderr != nil && cmderr.Error() != "exit status 1" {
+		return false, fmt.Errorf("error running command %s, error %v", cmd.String(), err)
 	}
 
 	rejectsFileStats, err := os.Stat(rejectsFilePathAbsolute)
 	if err != nil {
-		return nil, "", fmt.Errorf("unable to stat reject file at %v, error %v", rejectsFilePathAbsolute, err)
+		return false, fmt.Errorf("unable to stat reject file at %v, error %v", rejectsFilePathAbsolute, err)
 	}
 
 	if rejectsFileStats.Size() == 0 {
 		err := os.Remove(rejectsFilePathAbsolute)
 		if err != nil {
-			return nil, "", fmt.Errorf("unable to remove empty rejects file at %v, error %v", rejectsFilePathAbsolute, err)
+			return false, fmt.Errorf("unable to remove empty rejects file at %v, error %v", rejectsFilePathAbsolute, err)
 		}
 
-		return out, "", nil
+		rejectsFilePathAbsolute = ""
 	}
 
-	return out, rejectsFilePathAbsolute, nil
+	if cmderr != nil && rejectsFilePathAbsolute == "" {
+		return false, fmt.Errorf("error running command %s, error %v", cmd.String(), err)
+	}
+
+	if len(out) > 0 {
+		fmt.Fprintf(vzHelper.GetOutputStream(), "%s", string(out))
+	}
+
+	if rejectsFilePathAbsolute != "" {
+		rejects, err := os.ReadFile(rejectsFilePathAbsolute)
+		if err != nil {
+			return true, fmt.Errorf("unable to read rejects file at %s, error %v", rejectsFilePathAbsolute, err)
+		}
+
+		fmt.Fprintf(vzHelper.GetOutputStream(), "%s", string(rejects))
+		fmt.Fprintf(vzHelper.GetOutputStream(), "Please review patch file at %s and applied changes.\n", patchFile)
+		return true, nil
+	}
+
+	return false, nil
 }
